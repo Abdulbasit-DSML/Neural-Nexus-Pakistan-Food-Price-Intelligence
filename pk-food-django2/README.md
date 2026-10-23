@@ -1,82 +1,111 @@
-# Pakistan Food Price Intelligence (Django + Gemini, Vercel-ready)
+# Pakistan Food Price Intelligence
 
-A Django web app that analyses the WFP Pakistan food price dataset (2004–2023) and includes an **AI analyst powered by the Gemini API**. The AI doesn't guess: it calls tools that query the real data, then explains the results or writes a full report.
+A Django web application for exploring Pakistan's food-price data from the World Food Programme (WFP), covering 2004–2023. It includes an interactive dashboard, AI-powered data analysis using the Gemini API, and monthly price forecasts.
 
-## 1. What the dataset contains
-- 9,996 retail price records, Jan 2004 – Dec 2023, nominal PKR plus USD equivalent. No missing values or duplicates.
-- 5 city markets (Karachi, Lahore, Multan, Peshawar, Quetta) and 17 items (cereals, pulses, oil, dairy, meat/eggs, fuel, daily wage).
-- Uneven coverage: wheat flour and basmati rice start in 2004, most others 2013–2015, salt only 2014–2018.
-- The CSV has a `#hashtag` row under the header (HDX format); `analytics/data.py` skips it.
+## Features
 
-## 2. Project structure
-```
+- **Food-price dashboard:** Explore historical prices across five city markets and 17 recorded items.
+- **Gemini AI analyst:** Ask questions about the dataset. The AI uses application tools to query the data before explaining results.
+- **Price forecasting:** Forecast monthly prices 1–24 months ahead, view an 80% range, and compare expected changes across items.
+- **Transparent analysis:** The interface displays the data queries run by the AI.
+
+## Dataset
+
+The included CSV contains 9,996 retail price records from January 2004 through December 2023, with prices in PKR and USD equivalents. It covers Karachi, Lahore, Multan, Peshawar, and Quetta.
+
+Data coverage varies by item. Wheat flour and basmati rice begin in 2004, many other items begin between 2013 and 2015, and salt is recorded only from 2014 to 2018. The CSV includes an HDX `#hashtag` row beneath the header; the data loader handles it.
+
+**Forecast limitation:** The included dataset ends in December 2023. Forecasts therefore extend beyond the last date in the supplied dataset, not necessarily beyond the present day. Forecasts are estimates, not guaranteed future prices, and cannot account for unexpected events or policy changes. Salt forecasts may be stale because its recorded series ends in 2018.
+
+## Tech Stack
+
+- Python 3.12
+- Django
+- Gemini API
+- Chart.js
+- `requests`
+
+The application reads the CSV directly; it does not use a database. Data is cached in memory for each server instance.
+
+## Project Structure
+
+```text
 manage.py
-foodai/                 Django project (settings, urls, wsgi)
+foodai/                         Django project settings and URL configuration
 analytics/
-  data.py               CSV loading + aggregations (dashboard AND AI tools use these)
-  forecast.py           Price forecasting engine (pure Python) + backtesting
-  ai.py                 Gemini REST client with function calling (tool loop)
-  views.py              index page, POST /api/analyze/, GET /api/forecast/, GET /api/outlook/
-  templates/analytics/index.html   Dashboard (Chart.js) + AI chat panel
-  tests.py              Unit tests (Gemini is mocked)
-data/wfp_food_prices_pak.csv
-vercel.json             60s function timeout for AI requests
-requirements.txt        Django + requests (no pandas, keeps the bundle small)
-.python-version         3.12
-```
-There is no database: the CSV is read once per server instance and cached in memory.
-
-## 3. Run locally
-```bash
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-export GEMINI_API_KEY=your-key DEBUG=1                # Windows (PowerShell): $env:GEMINI_API_KEY="your-key"; $env:DEBUG="1"
-python manage.py runserver                            # http://127.0.0.1:8000
-python manage.py test                                 # optional: run tests
+  data.py                       CSV loading and data aggregations
+  forecast.py                   Forecasting engine and backtesting
+  ai.py                          Gemini REST client and tool-calling loop
+  views.py                       Dashboard and API endpoints
+  templates/analytics/index.html Dashboard and AI chat interface
+  tests.py                       Unit tests (Gemini calls are mocked)
+data/wfp_food_prices_pak.csv     Food-price dataset
+vercel.json                      Vercel deployment configuration
+requirements.txt                 Python dependencies
+.python-version                  Python version configuration (3.12)
 ```
 
-## 4. Deploy to Vercel
-Vercel detects Django automatically from `manage.py`; no extra build setup is needed.
-1. Push the project to GitHub.
-2. In Vercel: **Add New → Project**, import the repo (Framework should show Django/Python).
-3. Add **Environment Variables**: `GEMINI_API_KEY` (required), `SECRET_KEY` (random string), and optionally `ACCESS_CODE` and `GEMINI_MODEL`.
-4. Click **Deploy**. CLI alternative: `npm i -g vercel && vercel --prod`.
+## Deploy to Vercel
 
-## 5. How the AI works
-The browser posts the chat to `/api/analyze/` (CSRF-protected). `ai.py` sends it to Gemini (`generateContent`) with two functions:
-- `get_overview`: coverage notes and per-item stats (CAGR, PKR vs USD multiple, YoY, volatility, cheapest/priciest city).
-- `query_prices`: filter by item, city, dates; group by year/month/city/province/item; metric PKR or USD.
+### 1. Push the project to GitHub
 
-Gemini calls them as needed (up to 6 rounds) and answers from the returned numbers. The UI shows every query it ran. Notes for Gemini 3.x: the model's reply (including its thought signature) is sent back unchanged, and each function result carries the call's `id`; both are handled in `ai.py`.
+Make sure the repository includes `manage.py`, the `foodai/` and `analytics/` directories, the `data/` CSV file, `requirements.txt`, `.python-version`, and `vercel.json`.
 
-## 5b. Price forecasting
-**What it does:** predicts monthly prices 1–24 months ahead for any item (national average or one city), in PKR or USD, with an 80% range. The dashboard shows the chart, expected change, and the model's backtest error. "Compare all items" ranks every commodity by expected change. The AI can call the same engine (`forecast_prices`, `forecast_outlook`), so you can ask "forecast wheat flour for 12 months" or "which items will rise most?".
+### 2. Import the repository into Vercel
 
-**How it works (`analytics/forecast.py`):** monthly average price → log scale → three candidate models (damped-trend Holt smoothing, the same with monthly seasonality, and naive "last value"). The best one is chosen per item by a rolling backtest of 6-month-ahead errors over the last ~2 years. Intervals widen with the horizon.
+1. Sign in to Vercel.
+2. Select **Add New → Project**.
+3. Import the GitHub repository containing this project.
+4. Review the detected project settings and deployment configuration before deploying.
 
-**Read this before trusting the numbers**
-- The dataset ends in **Dec 2023**, so "upcoming" means the months after that. For real future predictions, download the latest Pakistan food prices CSV from WFP's page on HDX (data.humdata.org), replace `data/wfp_food_prices_pak.csv` (same columns) and redeploy.
-- Backtest errors are roughly 3–13% over 6 months, and for many items the model only slightly beats the naive baseline. Treat forecasts as trend guides, not exact prices.
-- It cannot predict shocks (floods, subsidy or policy changes, currency crises). Salt stopped being recorded in 2018, so its forecast is flagged stale.
-- Not financial advice.
+### 3. Add environment variables
 
-**Next upgrades:** add fuel price and USD/PKR exchange rate as inputs, or try SARIMA/Prophet (heavier dependencies; run on a separate service if the Vercel bundle gets too big).
+In the Vercel project, open **Settings → Environment Variables** and add:
 
-## 6. Model choice
-Default is `gemini-3.5-flash`. If your key can't use it or you hit quota limits, set `GEMINI_MODEL` to another id from [Google AI Studio](https://aistudio.google.com), e.g. `gemini-3.5-flash-lite` or `gemini-3.1-flash-lite`. Older `gemini-2.5-*` models are scheduled for retirement and may stop working.
+| Variable | Required? | Purpose |
+|---|---|---|
+| `GEMINI_API_KEY` | Yes, for AI analysis | Your Gemini API key. Keep it secret. |
+| `SECRET_KEY` | Yes for production | A long, random Django secret key. |
+| `GEMINI_MODEL` | Optional | Gemini model ID to use. The application has a default. |
+| `ACCESS_CODE` | Optional | Enables the access-code feature described by the application. |
 
-## 7. Security and cost
-Anyone with your URL can use your Gemini quota. Set `ACCESS_CODE` (visitors then enter it in the chat panel) and set a quota/budget alert in Google AI Studio. For public launch, add rate limiting (Vercel Firewall rules).
+Apply the variables to the appropriate deployment environments. After changing environment variables, redeploy so the deployment uses the updated values.
 
-## 8. Customise
-- **New data:** replace the CSV in `data/` (same columns) and redeploy.
-- **AI behaviour:** edit `SYSTEM` in `analytics/ai.py`.
-- **More tools:** add a function declaration in `TOOLS` and handle it in `_run_tool` (e.g. forecasting, fuel-vs-food correlation).
-- **Ideas:** CPI-adjusted prices, map using latitude/longitude, CSV export, streaming answers.
+**Important:** Do not set `DEBUG=1` in production. Confirm that Django's production settings, allowed hosts, and CSRF trusted origins are correctly configured for the deployed Vercel domain. The required settings depend on the current `foodai/settings.py` implementation.
 
-## 9. Troubleshooting
-- *"GEMINI_API_KEY is not set"*: add it under Vercel → Settings → Environment Variables and redeploy.
-- *Gemini error 400/404 about the model*: set `GEMINI_MODEL` to a model your key supports.
-- *Gemini error 429*: free-tier quota reached; wait, use a lighter model, or enable billing.
-- *Timeouts*: full reports can take 20–40s; `vercel.json` allows 60s.
-- *CSRF 403 on the AI button*: reload the page so the CSRF cookie is set; on a custom domain add it to `ALLOWED_HOSTS`.
+### 4. Deploy
+
+Click **Deploy** in Vercel and wait for the build to finish. Open the deployment URL and test the dashboard, forecasts, and AI chat. If deployment fails, check the Vercel build and function logs before changing configuration.
+
+## How the AI Analyst Works
+
+The browser sends chat requests to `POST /api/analyze/`. The Django application calls Gemini, which can use these data tools:
+
+- **`get_overview`:** Returns dataset coverage and item-level statistics, including growth, year-over-year changes, volatility, PKR-to-USD comparisons, and city comparisons.
+- **`query_prices`:** Queries prices using filters such as item, city, and date, with grouping by year, month, city, province, or item and a PKR or USD metric.
+
+Gemini can call tools over multiple rounds, up to the limit implemented in the application. The AI's answer is based on the tool results returned by the application. The chat endpoint is CSRF-protected.
+
+## How Forecasting Works
+
+The forecasting engine in `analytics/forecast.py` uses monthly average prices on a log scale and evaluates three candidate approaches: damped-trend Holt smoothing, Holt smoothing with monthly seasonality, and a naive last-value baseline. It selects a model for each item using rolling backtesting of six-month-ahead errors over approximately the last two years of available data. The displayed forecast range widens with the forecast horizon.
+
+Forecasts are intended as trend indicators, not exact prices. They cannot anticipate shocks such as floods, subsidy changes, policy decisions, or currency crises. Update the CSV with a compatible, more recent dataset and redeploy if you need forecasts based on newer observations.
+
+## Configuration and Security
+
+- **Gemini model:** Set `GEMINI_MODEL` to a model ID supported by your Google AI Studio API key if the default is unavailable or you encounter model or quota errors.
+- **Access control:** Anyone who can access a public deployment may be able to use its Gemini quota. Configure `ACCESS_CODE` if appropriate and test that the access-code feature works as expected.
+- **Usage limits:** Monitor API usage and configure a budget or quota alert in Google AI Studio. Consider rate limiting before a public launch.
+- **Secrets:** Never commit `GEMINI_API_KEY`, `SECRET_KEY`, or other credentials to the repository.
+
+## Troubleshooting
+
+| Problem | What to check |
+|---|---|
+| `GEMINI_API_KEY is not set` | Add `GEMINI_API_KEY` in Vercel project environment variables, then redeploy. |
+| Gemini returns a `400` or `404` model error | Check that `GEMINI_MODEL` is a valid model ID supported by your API key. |
+| Gemini returns `429` | Check quota and usage limits; wait for the quota to reset or use an available model with suitable limits. |
+| Requests time out | Review Vercel function logs and the timeout configured in `vercel.json`. Long AI reports may take longer to generate. |
+| AI request returns CSRF `403` | Reload the page and check the deployed Django CSRF and host configuration, including any custom-domain settings. |
+| Deployment fails | Read the Vercel build logs and function logs. Confirm that dependencies, required files, environment variables, and Django production settings are correct. |
